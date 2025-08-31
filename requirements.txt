@@ -1,0 +1,5 @@
+Flask
+pymongo
+dnspython
+google-genai
+python-dotenv

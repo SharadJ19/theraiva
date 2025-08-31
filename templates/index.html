@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Theraiva Desktop Chat</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<!-- Markdown + DOMPurify -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.2/dist/purify.min.js"></script>
+<!-- Highlight.js for code blocks -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+</head>
+<body>
+
+<div class="desktop-wrapper d-flex vh-100">
+
+  <!-- Sidebar -->
+  <div class="sidebar bg-primary text-white d-flex flex-column p-3 flex-shrink-0">
+    <h3 class="brand-logo mb-4">Theraiva</h3>
+    <!-- <p class="small">AI Chat for young adults</p> -->
+    <div id="name-prompt-sidebar" class="mt-auto">
+      <label for="user-name" class="form-label">Enter your name:</label>
+      <input type="text" id="user-name" class="form-control mb-2" placeholder="Your name" autofocus>
+      <button class="btn btn-light w-100" id="start-chat">Start Chat</button>
+    </div>
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel d-flex flex-column flex-grow-1">
+    <div class="chat-header p-3 bg-light shadow-sm flex-shrink-0">
+      <h5 class="mb-0" id="chat-greeting">Welcome</h5>
+    </div>
+
+    <div id="chat-box" class="chat-box flex-grow-1 overflow-auto p-3"></div>
+
+    <div id="typing-indicator" class="text-muted small mb-2 px-3" style="display:none;">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span> AI is typing...
+    </div>
+
+    <div class="input-group p-3 bg-light flex-shrink-0">
+      <input type="text" id="user-input" class="form-control" placeholder="Type your message...">
+      <button class="btn btn-primary" id="send-btn">Send</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const startBtn = document.getElementById('start-chat');
+const userNameInput = document.getElementById('user-name');
+const chatBox = document.getElementById('chat-box');
+const userInput = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const typingIndicator = document.getElementById('typing-indicator');
+const chatGreeting = document.getElementById('chat-greeting');
+const namePromptSidebar = document.getElementById('name-prompt-sidebar');
+
+let userName = localStorage.getItem('userName') || '';
+
+// Configure marked.js with GitHub-flavored Markdown
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+  smartLists: true,
+  smartypants: true
+});
+
+function initializeChat() {
+  namePromptSidebar.style.display = 'none';
+  chatGreeting.textContent = `Hi ${userName}`;
+  userInput.focus();
+  const messages = JSON.parse(localStorage.getItem('chatMessages') || '[]');
+  messages.forEach(m => appendMessage(m.sender, m.text, false));
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+startBtn.addEventListener('click', () => {
+  const name = userNameInput.value.trim();
+  if(!name) return;
+  userName = name;
+  localStorage.setItem('userName', userName);
+  initializeChat();
+});
+
+userNameInput.addEventListener('keypress', e => { if(e.key==='Enter') startBtn.click(); });
+
+function appendMessage(sender, text, fadeIn=true){
+  const msgDiv = document.createElement('div');
+  msgDiv.classList.add('message', 'mb-2');
+  if(fadeIn) msgDiv.classList.add('fade-in');
+  msgDiv.classList.add(sender==='AI' ? 'ai-message' : 'user-message');
+
+  if(sender==='AI'){
+    const mdContainer = document.createElement('div');
+    mdContainer.classList.add('markdown-body');
+    // Convert Markdown to HTML + sanitize
+    mdContainer.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    msgDiv.innerHTML = `<span class="message-sender">${sender}:</span>`;
+    msgDiv.appendChild(mdContainer);
+
+    // Apply syntax highlighting for code blocks
+    mdContainer.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+
+  } else {
+    msgDiv.innerHTML = `<span class="message-sender">${sender}:</span> ${text}`;
+  }
+
+  chatBox.appendChild(msgDiv);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function saveMessage(sender, text){
+  const messages = JSON.parse(localStorage.getItem('chatMessages') || '[]');
+  messages.push({sender, text});
+  localStorage.setItem('chatMessages', JSON.stringify(messages));
+}
+
+async function sendMessage(){
+  const message = userInput.value.trim();
+  if(!message) return;
+  appendMessage('You', message);
+  saveMessage('You', message);
+  userInput.value = '';
+  userInput.focus();
+  typingIndicator.style.display = 'block';
+
+  try {
+    const resp = await fetch('/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message, userName})
+    });
+    const data = await resp.json();
+    typingIndicator.style.display = 'none';
+    appendMessage('AI', data.reply, true);
+    saveMessage('AI', data.reply);
+  } catch(e){
+    typingIndicator.style.display = 'none';
+    appendMessage('AI', 'Oops! Something went wrong.', true);
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+userInput.addEventListener('keypress', e => { if(e.key==='Enter') sendMessage(); });
+
+if(userName) initializeChat();
+</script>
+
+</body>
+</html>
